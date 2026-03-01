@@ -1,7 +1,20 @@
 require('dotenv').config();
 const { Client, GatewayIntentBits, ModalBuilder, TextInputBuilder, TextInputStyle, ActionRowBuilder, EmbedBuilder, MessageFlags, PermissionFlagsBits, ButtonBuilder, ButtonStyle, AutoModerationActionType, AutoModerationRuleTriggerType, ChannelType } = require('discord.js');
-const fs = require('fs');
-const path = require('path');
+const { initializeApp } = require('firebase/app');
+const { getFirestore, doc, getDoc, setDoc, updateDoc, arrayUnion, arrayRemove } = require('firebase/firestore');
+
+// Firebase init
+const firebaseConfig = {
+  apiKey: process.env.FIREBASE_API_KEY,
+  authDomain: process.env.FIREBASE_AUTH_DOMAIN,
+  projectId: process.env.FIREBASE_PROJECT_ID,
+  storageBucket: process.env.FIREBASE_STORAGE_BUCKET,
+  messagingSenderId: process.env.FIREBASE_MESSAGING_SENDER_ID,
+  appId: process.env.FIREBASE_APP_ID
+};
+
+const firebaseApp = initializeApp(firebaseConfig);
+const db = getFirestore(firebaseApp);
 
 const client = new Client({
   intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages, GatewayIntentBits.MessageContent, GatewayIntentBits.DirectMessages]
@@ -9,33 +22,54 @@ const client = new Client({
 
 const spamState = { running: false, stop: false };
 
-
-// ========================
-// FILES + WHITELIST
-// ========================
 const MAIN_OWNER_ID = '983019918138179684';
-const USERS_FILE = path.join(__dirname, 'approved_users.json');
-const OWNERS_FILE = path.join(__dirname, 'owners.json');
-const PREFIX_FILE = path.join(__dirname, 'prefix.json');
 
-function loadJSON(file, defaultVal) {
-  try { if (fs.existsSync(file)) return JSON.parse(fs.readFileSync(file, 'utf8')); } catch (e) {}
-  return defaultVal;
+// In-memory cache (loaded from Firebase on startup)
+let approvedUsers = new Set([MAIN_OWNER_ID]);
+let owners = new Set([MAIN_OWNER_ID]);
+let prefix = '^';
+
+// ========================
+// FIREBASE HELPERS
+// ========================
+async function loadFromDB() {
+  try {
+    const dataDoc = await getDoc(doc(db, 'bot', 'data'));
+    if (dataDoc.exists()) {
+      const data = dataDoc.data();
+      if (data.approvedUsers) approvedUsers = new Set(data.approvedUsers);
+      if (data.owners) owners = new Set(data.owners);
+      if (data.prefix) prefix = data.prefix;
+    } else {
+      // First run — create the document with defaults
+      await setDoc(doc(db, 'bot', 'data'), {
+        approvedUsers: [MAIN_OWNER_ID],
+        owners: [MAIN_OWNER_ID],
+        prefix: '^'
+      });
+    }
+    // Always ensure main owner is in both sets
+    approvedUsers.add(MAIN_OWNER_ID);
+    owners.add(MAIN_OWNER_ID);
+    console.log('Firebase data loaded successfully.');
+  } catch (e) {
+    console.error('Failed to load from Firebase:', e.message);
+  }
 }
 
-let prefix = loadJSON(PREFIX_FILE, '^');
-if (typeof prefix !== 'string') prefix = '^';
+async function saveApprovedUsers() {
+  await updateDoc(doc(db, 'bot', 'data'), { approvedUsers: [...approvedUsers] });
+}
+async function saveOwners() {
+  await updateDoc(doc(db, 'bot', 'data'), { owners: [...owners] });
+}
+async function savePrefix() {
+  await updateDoc(doc(db, 'bot', 'data'), { prefix: prefix });
+}
 
-const approvedUsers = new Set(loadJSON(USERS_FILE, [MAIN_OWNER_ID]));
-const owners = new Set(loadJSON(OWNERS_FILE, [MAIN_OWNER_ID]));
-
-approvedUsers.add(MAIN_OWNER_ID);
-owners.add(MAIN_OWNER_ID);
-
-function saveUsers() { fs.writeFileSync(USERS_FILE, JSON.stringify([...approvedUsers], null, 2)); }
-function saveOwners() { fs.writeFileSync(OWNERS_FILE, JSON.stringify([...owners], null, 2)); }
-function savePrefix() { fs.writeFileSync(PREFIX_FILE, JSON.stringify(prefix)); }
-
+// ========================
+// HELPERS
+// ========================
 function isOwner(userId) { return owners.has(userId); }
 
 function isApproved(interaction) {
@@ -60,13 +94,11 @@ client.on('messageCreate', async (message) => {
   const command = args.shift().toLowerCase();
 
   if (command === 'setprefix') {
-    if (!isOwner(message.author.id)) {
-      return message.reply('Only owners can change the prefix.');
-    }
+    if (!isOwner(message.author.id)) return message.reply('Only owners can change the prefix.');
     const newPrefix = args[0];
     if (!newPrefix) return message.reply('Usage: `' + prefix + 'setprefix [newprefix]`');
     prefix = newPrefix;
-    savePrefix();
+    await savePrefix();
     return message.reply('Prefix changed to `' + prefix + '`');
   }
 
@@ -90,8 +122,8 @@ client.on('messageCreate', async (message) => {
     if (!userId) return message.reply('Usage: `' + prefix + 'addowner [userid]`');
     owners.add(userId);
     approvedUsers.add(userId);
-    saveOwners();
-    saveUsers();
+    await saveOwners();
+    await saveApprovedUsers();
     return message.reply('User `' + userId + '` is now an owner.');
   }
 
@@ -101,7 +133,7 @@ client.on('messageCreate', async (message) => {
     if (!userId) return message.reply('Usage: `' + prefix + 'removeowner [userid]`');
     if (userId === MAIN_OWNER_ID) return message.reply('Cannot remove the main owner.');
     owners.delete(userId);
-    saveOwners();
+    await saveOwners();
     return message.reply('User `' + userId + '` is no longer an owner.');
   }
 
@@ -125,7 +157,7 @@ client.on('messageCreate', async (message) => {
     const userId = args[0];
     if (!userId) return message.reply('Usage: `' + prefix + 'approveuser [userid]`');
     approvedUsers.add(userId);
-    saveUsers();
+    await saveApprovedUsers();
     return message.reply('User `' + userId + '` approved.');
   }
 
@@ -135,7 +167,7 @@ client.on('messageCreate', async (message) => {
     if (!userId) return message.reply('Usage: `' + prefix + 'removeuser [userid]`');
     if (userId === MAIN_OWNER_ID) return message.reply('Cannot remove the main owner.');
     approvedUsers.delete(userId);
-    saveUsers();
+    await saveApprovedUsers();
     return message.reply('User `' + userId + '` removed.');
   }
 
@@ -360,14 +392,14 @@ client.on('interactionCreate', async (interaction) => {
       return interaction.reply({ content: '🎉 **You have been gifted a gift!**\n' + giftLink, embeds: [embed], components: [button] });
     }
   }
-
 });
 
-client.once('clientReady', () => {
+client.once('clientReady', async () => {
+  await loadFromDB();
   console.log('Logged in as ' + client.user.tag);
   console.log('Prefix: ' + prefix);
-  console.log('Owners loaded: ' + owners.size);
-  console.log('Approved users loaded: ' + approvedUsers.size);
+  console.log('Owners: ' + owners.size);
+  console.log('Approved users: ' + approvedUsers.size);
 });
 
 client.login(process.env.TOKEN);
