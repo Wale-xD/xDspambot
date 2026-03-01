@@ -186,28 +186,66 @@ client.on('messageCreate', async (message) => {
 
   if (command === 'serverlist') {
     if (!isOwner(message.author.id)) return message.reply('Only owners can use this command.');
-    const guilds = client.guilds.cache;
-    if (guilds.size === 0) {
+    const guilds = [...client.guilds.cache.values()];
+    if (guilds.length === 0) {
       const reply = await message.reply('Bot is not in any servers.');
       autoDelete(reply);
       return;
     }
-    let list = '**Servers (' + guilds.size + '):**\n\n';
-    for (const guild of guilds.values()) {
-      try {
-        const channels = guild.channels.cache.filter(c => c.type === ChannelType.GuildText && c.permissionsFor(guild.members.me).has(PermissionFlagsBits.CreateInstantInvite));
-        let invite = 'No invite available';
-        if (channels.size > 0) {
-          const inv = await channels.first().createInvite({ maxAge: 0, maxUses: 0 });
-          invite = 'https://discord.gg/' + inv.code;
+
+    const perPage = 7;
+    const totalPages = Math.ceil(guilds.length / perPage);
+
+    async function buildEmbed(page) {
+      const start = page * perPage;
+      const pageGuilds = guilds.slice(start, start + perPage);
+      let description = '';
+      for (const guild of pageGuilds) {
+        try {
+          const channels = guild.channels.cache.filter(c => c.type === ChannelType.GuildText && c.permissionsFor(guild.members.me).has(PermissionFlagsBits.CreateInstantInvite));
+          let invite = 'No invite available';
+          if (channels.size > 0) {
+            const inv = await channels.first().createInvite({ maxAge: 0, maxUses: 0 });
+            invite = '<https://discord.gg/' + inv.code + '>';
+          }
+          description += '**' + guild.name + '**\n`' + guild.id + '` • ' + invite + '\n\n';
+        } catch (e) {
+          description += '**' + guild.name + '**\n`' + guild.id + '` • No invite available\n\n';
         }
-        list += '**' + guild.name + '** (`' + guild.id + '`)\n' + invite + '\n\n';
-      } catch (e) {
-        list += '**' + guild.name + '** (`' + guild.id + '`)\nNo invite available\n\n';
       }
+      return new EmbedBuilder()
+        .setTitle('Servers (' + guilds.length + ' total)')
+        .setDescription(description)
+        .setFooter({ text: 'Page ' + (page + 1) + ' of ' + totalPages })
+        .setColor(0x5865F2);
     }
-    const reply = await message.reply(list);
+
+    function buildButtons(page) {
+      const row = new ActionRowBuilder();
+      row.addComponents(
+        new ButtonBuilder().setCustomId('sl_prev_' + page).setLabel('Previous').setStyle(ButtonStyle.Secondary).setDisabled(page === 0),
+        new ButtonBuilder().setCustomId('sl_next_' + page).setLabel('Next').setStyle(ButtonStyle.Primary).setDisabled(page === totalPages - 1)
+      );
+      return row;
+    }
+
+    const embed = await buildEmbed(0);
+    const reply = await message.reply({ embeds: [embed], components: totalPages > 1 ? [buildButtons(0)] : [] });
     autoDelete(reply);
+
+    if (totalPages > 1) {
+      const collector = reply.createMessageComponentCollector({ time: 60000 });
+      collector.on('collect', async btn => {
+        if (btn.user.id !== message.author.id) return btn.reply({ content: 'Only the command user can use these buttons.', flags: MessageFlags.Ephemeral });
+        const parts = btn.customId.split('_');
+        const action = parts[1];
+        const currentPage = parseInt(parts[2]);
+        const newPage = action === 'next' ? currentPage + 1 : currentPage - 1;
+        const newEmbed = await buildEmbed(newPage);
+        await btn.update({ embeds: [newEmbed], components: [buildButtons(newPage)] });
+      });
+      collector.on('end', () => { reply.edit({ components: [] }).catch(() => {}); });
+    }
   }
 
   if (command === 'getautomodbadge') {
