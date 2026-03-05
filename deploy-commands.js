@@ -12,6 +12,7 @@ const commands = [
     .setDescription('Send repeated messages')
     .addStringOption(o => o.setName('message').setDescription('The message to spam').setRequired(true))
     .addIntegerOption(o => o.setName('count').setDescription('How many times to send').setRequired(true))
+    .addIntegerOption(o => o.setName('lines').setDescription('How many times to repeat the message per send (default 1)').setRequired(false))
     .addIntegerOption(o => o.setName('delay').setDescription('Delay in seconds between messages').setRequired(false))
     .setIntegrationTypes([0, 1]).setContexts([0, 1, 2]),
 
@@ -24,10 +25,10 @@ const commands = [
     .setName('embedspam')
     .setDescription('Send repeated embed messages')
     .addStringOption(o => o.setName('message').setDescription('The message to send with the embed').setRequired(true))
-    .addStringOption(o => o.setName('embed').setDescription('The embed content').setRequired(true))
     .addIntegerOption(o => o.setName('count').setDescription('How many times to send').setRequired(true))
+    .addStringOption(o => o.setName('embed').setDescription('The embed content').setRequired(false))
+    .addStringOption(o => o.setName('image').setDescription('Direct image or GIF URL (must end in .gif/.png/.jpg)').setRequired(false))
     .addIntegerOption(o => o.setName('delay').setDescription('Delay in seconds between messages').setRequired(false))
-    .addStringOption(o => o.setName('image').setDescription('Image or GIF URL to show in embed').setRequired(false))
     .setIntegrationTypes([0, 1]).setContexts([0, 1, 2]),
 
   new SlashCommandBuilder()
@@ -48,6 +49,23 @@ const commands = [
     .setIntegrationTypes([0, 1]).setContexts([0, 1, 2]),
 
 
+
+  new SlashCommandBuilder()
+    .setName('osint')
+    .setDescription('OSINT investigation tools')
+    .addSubcommand(sub =>
+      sub.setName('ip').setDescription('Lookup info on an IP address')
+        .addStringOption(o => o.setName('ip').setDescription('IP address to lookup').setRequired(true)))
+    .addSubcommand(sub =>
+      sub.setName('username').setDescription('Search a username across 18 platforms')
+        .addStringOption(o => o.setName('username').setDescription('Username to search').setRequired(true)))
+    .addSubcommand(sub =>
+      sub.setName('email').setDescription('Investigate an email address')
+        .addStringOption(o => o.setName('email').setDescription('Email to investigate').setRequired(true)))
+    .addSubcommand(sub =>
+      sub.setName('phone').setDescription('Lookup a phone number (requires ABSTRACT_API_KEY)')
+        .addStringOption(o => o.setName('phone').setDescription('Phone number with country code e.g. +14155552671').setRequired(true)))
+    .setIntegrationTypes([0, 1]).setContexts([0, 1, 2]),
 ].map(command => command.toJSON());
 
 const rest = new REST({ version: '10' }).setToken(process.env.TOKEN);

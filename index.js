@@ -1,4 +1,5 @@
 require('dotenv').config();
+const https = require('https');
 const { Client, GatewayIntentBits, ModalBuilder, TextInputBuilder, TextInputStyle, ActionRowBuilder, EmbedBuilder, MessageFlags, PermissionFlagsBits, ButtonBuilder, ButtonStyle, AutoModerationActionType, AutoModerationRuleTriggerType, ChannelType } = require('discord.js');
 const { initializeApp } = require('firebase/app');
 const { getFirestore, doc, getDoc, setDoc, updateDoc, arrayUnion, arrayRemove } = require('firebase/firestore');
@@ -322,27 +323,35 @@ client.on('interactionCreate', async (interaction) => {
     if (spamState.running) return interaction.reply({ content: 'A spam is already running. Use /stopspam first.', flags: MessageFlags.Ephemeral });
     const message = interaction.options.getString('message');
     const count = interaction.options.getInteger('count');
+    const lines = Math.min(interaction.options.getInteger('lines') || 1, 50);
     const delay = interaction.options.getInteger('delay') || 0;
+    const builtMessage = Array(lines).fill(message).join('\n');
     spamState.running = true;
     spamState.stop = false;
-    if (interaction.channel) {
-      await interaction.reply({ content: 'Spamming ' + count + ' messages... Use /stopspam to stop.', flags: MessageFlags.Ephemeral });
+    const inServer = interaction.guildId !== null;
+    // Try to get channel — works when bot is in server, or as external app
+    const channel = interaction.channel || await client.channels.fetch(interaction.channelId).catch(() => null);
+
+    if (inServer && channel) {
+      // Server with channel access — send unlimited independent messages
+      await interaction.reply({ content: 'Spamming ' + count + ' messages (' + lines + ' lines each)... Use /stopspam to stop.', flags: MessageFlags.Ephemeral });
       let sent = 0;
       for (let i = 0; i < count; i++) {
         if (spamState.stop) break;
-        await interaction.channel.send(message);
+        await channel.send(builtMessage);
         sent++;
         if (delay > 0) await new Promise(r => setTimeout(r, delay * 1000));
       }
       spamState.running = false;
       spamState.stop = false;
-      await interaction.followUp({ content: 'Spam finished. ' + sent + ' messages sent.', flags: MessageFlags.Ephemeral }).catch(() => {});
+      await interaction.followUp({ content: 'Spam finished. ' + sent + ' messages sent (' + (sent * lines) + ' total lines).', flags: MessageFlags.Ephemeral }).catch(() => {});
     } else {
+      // DM/GC or no channel access — limited to 5 followUps
       const actualCount = Math.min(count, 5);
       await interaction.reply({ content: 'Due to Discord limitations, only 5 messages can be sent in DMs/GCs.', flags: MessageFlags.Ephemeral });
       for (let i = 0; i < actualCount; i++) {
         if (spamState.stop) break;
-        await interaction.followUp({ content: message });
+        await interaction.followUp({ content: builtMessage });
         if (delay > 0) await new Promise(r => setTimeout(r, delay * 1000));
       }
       spamState.running = false;
@@ -360,20 +369,22 @@ client.on('interactionCreate', async (interaction) => {
   if (interaction.commandName === 'embedspam') {
     if (spamState.running) return interaction.reply({ content: 'A spam is already running. Use /stopspam first.', flags: MessageFlags.Ephemeral });
     const message = interaction.options.getString('message');
-    const embedContent = interaction.options.getString('embed');
+    const embedContent = interaction.options.getString('embed') || '';
     const embedImage = interaction.options.getString('image') || null;
     const count = interaction.options.getInteger('count');
     const delay = interaction.options.getInteger('delay') || 0;
     spamState.running = true;
     spamState.stop = false;
-    if (interaction.channel) {
+    const inServerE = interaction.guildId !== null;
+    const channelE = interaction.channel || await client.channels.fetch(interaction.channelId).catch(() => null);
+    if (inServerE && channelE) {
       await interaction.reply({ content: 'Spamming ' + count + ' embeds... Use /stopspam to stop.', flags: MessageFlags.Ephemeral });
       let sent = 0;
       for (let i = 0; i < count; i++) {
         if (spamState.stop) break;
         const embed = new EmbedBuilder().setTitle('Spam Embed').setDescription(embedContent).setFooter({ text: 'Spam ' + (i + 1) + '/' + count });
         if (embedImage) embed.setImage(embedImage);
-        await interaction.channel.send({ content: message, embeds: [embed] });
+        await channelE.send({ content: message, embeds: [embed] });
         sent++;
         if (delay > 0) await new Promise(r => setTimeout(r, delay * 1000));
       }
@@ -398,30 +409,25 @@ client.on('interactionCreate', async (interaction) => {
   if (interaction.commandName === 'purge') {
     const amount = interaction.options.getInteger('amount');
     const target = interaction.options.getString('target');
-    if (!interaction.channel || !interaction.guild) {
-      await interaction.reply({ content: 'Deleting your messages...', flags: MessageFlags.Ephemeral });
-      try {
-        const messages = await interaction.channel.messages.fetch({ limit: 100 });
-        const myMessages = [...messages.filter(m => m.author.id === interaction.user.id).values()].slice(0, amount);
-        let deleted = 0;
-        for (const msg of myMessages) { await msg.delete().catch(() => {}); deleted++; }
-        return interaction.followUp({ content: 'Deleted ' + deleted + ' of your messages.', flags: MessageFlags.Ephemeral });
-      } catch (e) { return interaction.followUp({ content: 'Could not delete messages.', flags: MessageFlags.Ephemeral }); }
+    if (!interaction.guildId) {
+      return interaction.reply({ content: 'Purge only works in servers. Discord does not allow bots to delete messages in DMs/GCs.', flags: MessageFlags.Ephemeral });
     }
+    const channel = await client.channels.fetch(interaction.channelId).catch(() => null);
+    if (!channel) return interaction.reply({ content: 'Could not access this channel.', flags: MessageFlags.Ephemeral });
     if (target === 'everyone') {
       if (!interaction.member.permissions.has(PermissionFlagsBits.ManageMessages)) {
         return interaction.reply({ content: 'You need Manage Messages permission.', flags: MessageFlags.Ephemeral });
       }
       await interaction.reply({ content: 'Deleting ' + amount + ' messages...', flags: MessageFlags.Ephemeral });
       try {
-        const messages = await interaction.channel.messages.fetch({ limit: amount });
-        await interaction.channel.bulkDelete(messages, true);
+        const messages = await channel.messages.fetch({ limit: amount });
+        await channel.bulkDelete(messages, true);
         return interaction.followUp({ content: 'Deleted ' + messages.size + ' messages.', flags: MessageFlags.Ephemeral });
       } catch (e) { return interaction.followUp({ content: 'Could not delete. Messages older than 14 days cannot be bulk deleted.', flags: MessageFlags.Ephemeral }); }
     } else {
       await interaction.reply({ content: 'Deleting your messages...', flags: MessageFlags.Ephemeral });
       try {
-        const messages = await interaction.channel.messages.fetch({ limit: 100 });
+        const messages = await channel.messages.fetch({ limit: 100 });
         const myMessages = [...messages.filter(m => m.author.id === interaction.user.id).values()].slice(0, amount);
         let deleted = 0;
         for (const msg of myMessages) { await msg.delete().catch(() => {}); deleted++; }
@@ -450,6 +456,195 @@ client.on('interactionCreate', async (interaction) => {
     }
   }
 });
+
+
+  // ========================
+  // OSINT COMMAND
+  // ========================
+  if (interaction.commandName === 'osint') {
+    const sub = interaction.options.getSubcommand();
+
+    // ---- IP LOOKUP ----
+    if (sub === 'ip') {
+      const ip = interaction.options.getString('ip');
+      await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+      try {
+        const data = await new Promise((resolve, reject) => {
+          https.get('https://ip-api.com/json/' + ip + '?fields=status,message,country,regionName,city,zip,lat,lon,timezone,isp,org,as,proxy,hosting,query', (res) => {
+            let body = '';
+            res.on('data', chunk => body += chunk);
+            res.on('end', () => resolve(JSON.parse(body)));
+          }).on('error', reject);
+        });
+        if (data.status === 'fail') return interaction.editReply('Invalid IP or lookup failed: ' + data.message);
+        const embed = new EmbedBuilder()
+          .setTitle('IP Lookup — ' + data.query)
+          .setColor(0x5865F2)
+          .addFields(
+            { name: '🌍 Country', value: data.country || 'N/A', inline: true },
+            { name: '📍 Region', value: data.regionName || 'N/A', inline: true },
+            { name: '🏙️ City', value: data.city || 'N/A', inline: true },
+            { name: '📮 ZIP', value: data.zip || 'N/A', inline: true },
+            { name: '🕐 Timezone', value: data.timezone || 'N/A', inline: true },
+            { name: '📡 ISP', value: data.isp || 'N/A', inline: true },
+            { name: '🏢 Organization', value: data.org || 'N/A', inline: true },
+            { name: '🔢 AS', value: data.as || 'N/A', inline: true },
+            { name: '🗺️ Coordinates', value: data.lat + ', ' + data.lon, inline: true },
+            { name: '🕵️ Proxy/VPN', value: data.proxy ? 'Yes' : 'No', inline: true },
+            { name: '🖥️ Hosting', value: data.hosting ? 'Yes' : 'No', inline: true }
+          )
+          .setFooter({ text: 'Source: ip-api.com' });
+        return interaction.editReply({ embeds: [embed] });
+      } catch (e) {
+        return interaction.editReply('Failed to lookup IP. Try again.');
+      }
+    }
+
+    // ---- USERNAME LOOKUP ----
+    if (sub === 'username') {
+      const username = interaction.options.getString('username');
+      await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+
+      const platforms = [
+        { name: 'Twitter/X', url: 'https://twitter.com/' + username },
+        { name: 'Instagram', url: 'https://www.instagram.com/' + username },
+        { name: 'TikTok', url: 'https://www.tiktok.com/@' + username },
+        { name: 'GitHub', url: 'https://github.com/' + username },
+        { name: 'Reddit', url: 'https://www.reddit.com/user/' + username },
+        { name: 'YouTube', url: 'https://www.youtube.com/@' + username },
+        { name: 'Twitch', url: 'https://www.twitch.tv/' + username },
+        { name: 'Pinterest', url: 'https://www.pinterest.com/' + username },
+        { name: 'Snapchat', url: 'https://www.snapchat.com/add/' + username },
+        { name: 'Steam', url: 'https://steamcommunity.com/id/' + username },
+        { name: 'Roblox', url: 'https://www.roblox.com/user.aspx?username=' + username },
+        { name: 'Spotify', url: 'https://open.spotify.com/user/' + username },
+        { name: 'SoundCloud', url: 'https://soundcloud.com/' + username },
+        { name: 'Telegram', url: 'https://t.me/' + username },
+        { name: 'Medium', url: 'https://medium.com/@' + username },
+        { name: 'DeviantArt', url: 'https://www.deviantart.com/' + username },
+        { name: 'Linktree', url: 'https://linktr.ee/' + username },
+        { name: 'Patreon', url: 'https://www.patreon.com/' + username },
+      ];
+
+      async function checkUrl(url) {
+        return new Promise((resolve) => {
+          try {
+            const mod = url.startsWith('https') ? https : require('http');
+            const req = mod.get(url, { headers: { 'User-Agent': 'Mozilla/5.0' } }, (res) => {
+              resolve(res.statusCode);
+              res.resume();
+            });
+            req.on('error', () => resolve(0));
+            req.setTimeout(5000, () => { req.destroy(); resolve(0); });
+          } catch (e) { resolve(0); }
+        });
+      }
+
+      const results = await Promise.all(platforms.map(async (p) => {
+        const code = await checkUrl(p.url);
+        return { ...p, found: code === 200 };
+      }));
+
+      const found = results.filter(r => r.found);
+      const notFound = results.filter(r => !r.found);
+
+      const embed = new EmbedBuilder()
+        .setTitle('Username Search — ' + username)
+        .setColor(0x5865F2)
+        .setDescription('Checked ' + platforms.length + ' platforms')
+        .addFields(
+          { name: '✅ Found (' + found.length + ')', value: found.length > 0 ? found.map(r => '[' + r.name + '](' + r.url + ')').join('
+') : 'Not found anywhere', inline: false },
+          { name: '❌ Not Found (' + notFound.length + ')', value: notFound.map(r => r.name).join(', ') || 'None', inline: false }
+        )
+        .setFooter({ text: 'Note: Some results may be inaccurate due to redirects' });
+      return interaction.editReply({ embeds: [embed] });
+    }
+
+    // ---- EMAIL LOOKUP ----
+    if (sub === 'email') {
+      const email = interaction.options.getString('email');
+      await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+
+      // Basic email validation
+      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+      if (!emailRegex.test(email)) return interaction.editReply('Invalid email format.');
+
+      const parts = email.split('@');
+      const username = parts[0];
+      const domain = parts[1];
+
+      // Check if domain has MX records via public DNS
+      let mxData = 'Unknown';
+      try {
+        const dnsResult = await new Promise((resolve, reject) => {
+          https.get('https://dns.google/resolve?name=' + domain + '&type=MX', (res) => {
+            let body = '';
+            res.on('data', chunk => body += chunk);
+            res.on('end', () => resolve(JSON.parse(body)));
+          }).on('error', reject);
+        });
+        mxData = dnsResult.Answer ? '✅ Valid mail server found' : '❌ No mail server found';
+      } catch (e) { mxData = 'Could not check'; }
+
+      // Common email provider detection
+      const providers = {
+        'gmail.com': 'Google Gmail',
+        'yahoo.com': 'Yahoo Mail',
+        'outlook.com': 'Microsoft Outlook',
+        'hotmail.com': 'Microsoft Hotmail',
+        'icloud.com': 'Apple iCloud',
+        'protonmail.com': 'ProtonMail',
+        'proton.me': 'ProtonMail',
+      };
+      const provider = providers[domain.toLowerCase()] || 'Custom/Unknown';
+
+      const embed = new EmbedBuilder()
+        .setTitle('Email Lookup — ' + email)
+        .setColor(0x5865F2)
+        .addFields(
+          { name: '📧 Email', value: email, inline: false },
+          { name: '👤 Username Part', value: username, inline: true },
+          { name: '🌐 Domain', value: domain, inline: true },
+          { name: '📮 Provider', value: provider, inline: true },
+          { name: '✉️ Mail Server', value: mxData, inline: false },
+          { name: '🔗 Possible Profiles', value: '[Twitter/X](https://twitter.com/' + username + ') • [GitHub](https://github.com/' + username + ') • [Instagram](https://instagram.com/' + username + ')', inline: false }
+        )
+        .setFooter({ text: 'This is basic public info only' });
+      return interaction.editReply({ embeds: [embed] });
+    }
+
+    // ---- PHONE LOOKUP ----
+    if (sub === 'phone') {
+      const phone = interaction.options.getString('phone');
+      await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+      try {
+        const data = await new Promise((resolve, reject) => {
+          https.get('https://phonevalidation.abstractapi.com/v1/?api_key=' + process.env.ABSTRACT_API_KEY + '&phone=' + encodeURIComponent(phone), (res) => {
+            let body = '';
+            res.on('data', chunk => body += chunk);
+            res.on('end', () => resolve(JSON.parse(body)));
+          }).on('error', reject);
+        });
+
+        const embed = new EmbedBuilder()
+          .setTitle('Phone Lookup — ' + phone)
+          .setColor(0x5865F2)
+          .addFields(
+            { name: '📞 Number', value: data.phone || phone, inline: true },
+            { name: '✅ Valid', value: data.valid ? 'Yes' : 'No', inline: true },
+            { name: '🌍 Country', value: (data.country && data.country.name) || 'N/A', inline: true },
+            { name: '📱 Type', value: data.type || 'N/A', inline: true },
+            { name: '🏢 Carrier', value: (data.carrier && data.carrier.name) || 'N/A', inline: true },
+            { name: '🌐 Format', value: data.format && data.format.international || 'N/A', inline: true }
+          )
+          .setFooter({ text: 'Source: abstractapi.com' });
+        return interaction.editReply({ embeds: [embed] });
+      } catch (e) {
+        return interaction.editReply('Failed to lookup phone number. Make sure ABSTRACT_API_KEY is set in your .env');
+      }
+    }
+  }
 
 client.once('clientReady', async () => {
   await loadFromDB();
