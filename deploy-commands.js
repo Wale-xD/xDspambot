@@ -49,23 +49,6 @@ const commands = [
     .setIntegrationTypes([0, 1]).setContexts([0, 1, 2]),
 
 
-
-  new SlashCommandBuilder()
-    .setName('osint')
-    .setDescription('OSINT investigation tools')
-    .addSubcommand(sub =>
-      sub.setName('ip').setDescription('Lookup info on an IP address')
-        .addStringOption(o => o.setName('ip').setDescription('IP address to lookup').setRequired(true)))
-    .addSubcommand(sub =>
-      sub.setName('username').setDescription('Search a username across 18 platforms')
-        .addStringOption(o => o.setName('username').setDescription('Username to search').setRequired(true)))
-    .addSubcommand(sub =>
-      sub.setName('email').setDescription('Investigate an email address')
-        .addStringOption(o => o.setName('email').setDescription('Email to investigate').setRequired(true)))
-    .addSubcommand(sub =>
-      sub.setName('phone').setDescription('Lookup a phone number (requires ABSTRACT_API_KEY)')
-        .addStringOption(o => o.setName('phone').setDescription('Phone number with country code e.g. +14155552671').setRequired(true)))
-    .setIntegrationTypes([0, 1]).setContexts([0, 1, 2]),
 ].map(command => command.toJSON());
 
 const rest = new REST({ version: '10' }).setToken(process.env.TOKEN);
