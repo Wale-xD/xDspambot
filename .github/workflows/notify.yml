@@ -1,0 +1,50 @@
+name: Discord Push Notification
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  notify:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+        with:
+          fetch-depth: 2
+
+      - name: Get commit info
+        id: info
+        run: |
+          echo "msg=$(git log -1 --pretty=%s)" >> $GITHUB_OUTPUT
+          echo "author=$(git log -1 --pretty=%an)" >> $GITHUB_OUTPUT
+          echo "files=$(git diff --name-only HEAD~1 HEAD | wc -l)" >> $GITHUB_OUTPUT
+          echo "filelist=$(git diff --name-only HEAD~1 HEAD | tr '\n' ', ' | sed 's/,$//')" >> $GITHUB_OUTPUT
+          echo "added=$(git diff --name-only --diff-filter=A HEAD~1 HEAD | wc -l)" >> $GITHUB_OUTPUT
+          echo "modified=$(git diff --name-only --diff-filter=M HEAD~1 HEAD | wc -l)" >> $GITHUB_OUTPUT
+          echo "deleted=$(git diff --name-only --diff-filter=D HEAD~1 HEAD | wc -l)" >> $GITHUB_OUTPUT
+          echo "sha=$(git log -1 --pretty=%h)" >> $GITHUB_OUTPUT
+
+      - name: Send Discord notification
+        env:
+          DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK }}
+        run: |
+          curl -H "Content-Type: application/json" \
+          -d '{
+            "embeds": [{
+              "title": "📦 New Push — ${{ github.repository }}",
+              "color": 5765120,
+              "fields": [
+                { "name": "📝 Commit Message", "value": "${{ steps.info.outputs.msg }}", "inline": false },
+                { "name": "👤 Author", "value": "${{ steps.info.outputs.author }}", "inline": true },
+                { "name": "🔀 Branch", "value": "${{ github.ref_name }}", "inline": true },
+                { "name": "🔢 Commit", "value": "`${{ steps.info.outputs.sha }}`", "inline": true },
+                { "name": "📊 Changes", "value": "✅ Added: ${{ steps.info.outputs.added }}\n✏️ Modified: ${{ steps.info.outputs.modified }}\n❌ Deleted: ${{ steps.info.outputs.deleted }}\n📁 Total files: ${{ steps.info.outputs.files }}", "inline": false },
+                { "name": "📄 Changed Files", "value": "`${{ steps.info.outputs.filelist }}`", "inline": false }
+              ],
+              "footer": { "text": "GitHub Actions • ${{ github.repository }}" },
+              "timestamp": "${{ github.event.head_commit.timestamp }}"
+            }]
+          }' \
+          $DISCORD_WEBHOOK
