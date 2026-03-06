@@ -300,24 +300,6 @@ client.on('interactionCreate', async (interaction) => {
     return interaction.reply({ content: ownerMsg, flags: MessageFlags.Ephemeral });
   }
 
-  if (interaction.commandName === 'ping') {
-    const sent = Date.now();
-    await interaction.deferReply({ flags: MessageFlags.Ephemeral });
-    const latency = Date.now() - sent;
-    const wsLatency = client.ws.ping;
-    const color = latency < 100 ? 0x57F287 : latency < 200 ? 0xFEE75C : 0xED4245;
-    const embed = new EmbedBuilder()
-      .setTitle('🏓 Pong!')
-      .setColor(color)
-      .addFields(
-        { name: '⏱️ Response Latency', value: latency + 'ms', inline: true },
-        { name: '💓 WebSocket Heartbeat', value: wsLatency + 'ms', inline: true }
-      )
-      .setFooter({ text: 'Green < 100ms  Yellow < 200ms  Red = slow' })
-      .setTimestamp();
-    return interaction.editReply({ embeds: [embed] });
-  }
-
   if (interaction.commandName === 'ban') {
     const modal = new ModalBuilder()
       .setCustomId('banModal')

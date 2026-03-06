@@ -48,11 +48,6 @@ const commands = [
     .setDescription('Send a fake Discord Nitro gift')
     .setIntegrationTypes([0, 1]).setContexts([0, 1, 2]),
 
-  new SlashCommandBuilder()
-    .setName('ping')
-    .setDescription('Check bot response and websocket latency')
-    .setIntegrationTypes([0, 1]).setContexts([0, 1, 2]),
-
 
 ].map(command => command.toJSON());
 
