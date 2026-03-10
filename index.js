@@ -264,7 +264,7 @@ client.on('messageCreate', async (message) => {
   }
 
   if (command === 'getautomodbadge') {
-    if (message.author.id !== MAIN_OWNER_ID) return message.reply('Only the main owner can use this command.');
+    if (!isOwner(message.author.id)) return message.reply('Only owners can use this command.');
     if (!message.guild) return message.reply('This command only works in a server.');
     const amount = Math.min(parseInt(args[0]) || 100, 100);
     if (isNaN(amount) || amount < 1) return message.reply('Please provide a valid number. Example: `^getautomodbadge 50`');
