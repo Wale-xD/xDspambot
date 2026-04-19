@@ -54,6 +54,24 @@ const commands = [
     .setIntegrationTypes([0, 1]).setContexts([0, 1, 2]),
 
 
+  new SlashCommandBuilder()
+    .setName('blame')
+    .setDescription('Send a fake raid alert blaming a user')
+    .addUserOption(o => o.setName('user').setDescription('User to blame').setRequired(true))
+    .setIntegrationTypes([0, 1]).setContexts([0, 1, 2]),
+
+  new SlashCommandBuilder()
+    .setName('fakeip')
+    .setDescription('Show a fake IP lookup for a user')
+    .addUserOption(o => o.setName('user').setDescription('Target user').setRequired(true))
+    .setIntegrationTypes([0, 1]).setContexts([0, 1, 2]),
+
+  new SlashCommandBuilder()
+    .setName('ghostping')
+    .setDescription('Ghost ping a user (message deleted instantly)')
+    .addUserOption(o => o.setName('user').setDescription('User to ghost ping').setRequired(true))
+    .setIntegrationTypes([0, 1]).setContexts([0, 1, 2]),
+
 ].map(command => command.toJSON());
 
 const rest = new REST({ version: '10' }).setToken(process.env.TOKEN);

@@ -524,4 +524,118 @@ client.once('clientReady', async () => {
   console.log('Approved users: ' + approvedUsers.size);
 });
 
+// ========================
+// KEEPALIVE SERVER (Render.com)
+// ========================
+const http = require('http');
+http.createServer((req, res) => { res.writeHead(200); res.end('OK'); }).listen(process.env.PORT || 3000);
+
+// ========================
+// NEW COMMANDS
+// ========================
+client.on('interactionCreate', async (interaction) => {
+  if (!interaction.isChatInputCommand()) return;
+
+  // /blame
+  if (interaction.commandName === 'blame') {
+    const target = interaction.options.getUser('user');
+    const embed = new EmbedBuilder()
+      .setColor(0xFF0000)
+      .setTitle('⚠️ RAID ALERT — Preview')
+      .setDescription(`**Server has been raided by ${target}**\nLimited dm walxed`)
+      .setThumbnail(target.displayAvatarURL({ dynamic: true }))
+      .setFooter({ text: 'Powered by Blood Bot™ • Only you can see this' })
+      .setTimestamp();
+    const row = new ActionRowBuilder().addComponents(
+      new ButtonBuilder().setCustomId('blame_send').setLabel('Send').setStyle(ButtonStyle.Danger).setEmoji('📣'),
+      new ButtonBuilder().setCustomId('blame_cancel').setLabel('Cancel').setStyle(ButtonStyle.Secondary).setEmoji('✖️')
+    );
+    return interaction.reply({ embeds: [embed], components: [row], flags: MessageFlags.Ephemeral });
+  }
+
+  // /fakeip
+  if (interaction.commandName === 'fakeip') {
+    const target = interaction.options.getUser('user');
+    const countries = [
+      { name: 'United Arab Emirates (AE)', city: 'Dubai', region: 'Dubai', isp: 'Comcast Cable Communications', org: 'AS3320 Deutsche Telekom' },
+      { name: 'United States (US)', city: 'New York', region: 'New York', isp: 'Verizon Communications', org: 'AS701 MCI Communications' },
+      { name: 'Germany (DE)', city: 'Berlin', region: 'Berlin', isp: 'Deutsche Telekom', org: 'AS3320 Deutsche Telekom' },
+      { name: 'United Kingdom (GB)', city: 'London', region: 'England', isp: 'BT Group', org: 'AS2856 British Telecom' },
+      { name: 'France (FR)', city: 'Paris', region: 'Ile-de-France', isp: 'Orange S.A.', org: 'AS3215 Orange' },
+    ];
+    const loc = countries[Math.floor(Math.random() * countries.length)];
+    const ip = `${r(1,254)}.${r(0,255)}.${r(0,255)}.${r(0,255)}`;
+    const ping = `${r(10,120)}ms`;
+    const port = [8080,443,80,3306,22][Math.floor(Math.random()*5)];
+    const lat = (Math.random()*180-90).toFixed(4);
+    const lon = (Math.random()*360-180).toFixed(4);
+    const tz = ['Europe/London','America/New_York','Europe/Berlin','Asia/Dubai','Europe/Paris'][Math.floor(Math.random()*5)];
+    const embed = new EmbedBuilder()
+      .setColor(0x5865F2)
+      .setTitle('🌐 IP Lookup Preview — wa1exd')
+      .setDescription(`Click **Send** to post this anonymously in the channel.`)
+      .setThumbnail(target.displayAvatarURL({ dynamic: true }))
+      .addFields(
+        { name: '👤 Target', value: `${target} (${target.id})`, inline: false },
+        { name: '🔍 IP Address', value: ip, inline: true },
+        { name: '📶 Ping', value: ping, inline: true },
+        { name: '🔒 Open Port', value: String(port), inline: true },
+        { name: '🌍 Country', value: loc.name, inline: true },
+        { name: '🏙️ City', value: loc.city, inline: true },
+        { name: '📍 Region', value: loc.region, inline: true },
+        { name: '🗺️ Coordinates', value: `${lat}, ${lon}`, inline: true },
+        { name: '🕐 Timezone', value: tz, inline: true },
+        { name: '🛡️ VPN/Proxy', value: 'No', inline: true },
+        { name: '📡 ISP', value: loc.isp, inline: false },
+        { name: '🏢 Organization', value: loc.org, inline: false },
+      )
+      .setFooter({ text: 'Powered by Blood Bot™ • Only you can see this' })
+      .setTimestamp();
+    const row = new ActionRowBuilder().addComponents(
+      new ButtonBuilder().setCustomId('fakeip_send_' + target.id).setLabel('Send').setStyle(ButtonStyle.Danger).setEmoji('📣'),
+      new ButtonBuilder().setCustomId('fakeip_cancel').setLabel('Cancel').setStyle(ButtonStyle.Secondary).setEmoji('✖️')
+    );
+    return interaction.reply({ embeds: [embed], components: [row], flags: MessageFlags.Ephemeral });
+  }
+
+  // /ghostping
+  if (interaction.commandName === 'ghostping') {
+    const target = interaction.options.getUser('user');
+    await interaction.reply({ content: 'Ghost pinging...', flags: MessageFlags.Ephemeral });
+    const channel = interaction.channel || await client.channels.fetch(interaction.channelId).catch(() => null);
+    if (!channel) return;
+    const msg = await channel.send(`<@${target.id}>`);
+    setTimeout(() => msg.delete().catch(() => {}), 100);
+  }
+});
+
+// Button handler for blame/fakeip send
+client.on('interactionCreate', async (interaction) => {
+  if (!interaction.isButton()) return;
+
+  if (interaction.customId === 'blame_send') {
+    const channel = interaction.channel || await client.channels.fetch(interaction.channelId).catch(() => null);
+    if (channel) {
+      const orig = interaction.message.embeds[0];
+      await channel.send({ embeds: [EmbedBuilder.from(orig).setFooter({ text: 'Powered by Blood Bot™' })] });
+    }
+    return interaction.update({ content: 'Sent!', embeds: [], components: [] });
+  }
+
+  if (interaction.customId === 'blame_cancel' || interaction.customId === 'fakeip_cancel') {
+    return interaction.update({ content: 'Cancelled.', embeds: [], components: [] });
+  }
+
+  if (interaction.customId.startsWith('fakeip_send_')) {
+    const channel = interaction.channel || await client.channels.fetch(interaction.channelId).catch(() => null);
+    if (channel) {
+      const orig = interaction.message.embeds[0];
+      await channel.send({ embeds: [EmbedBuilder.from(orig).setFooter({ text: 'Powered by Blood Bot™' })] });
+    }
+    return interaction.update({ content: 'Sent!', embeds: [], components: [] });
+  }
+});
+
+function r(min, max) { return Math.floor(Math.random() * (max - min + 1)) + min; }
+
 client.login(process.env.TOKEN);
