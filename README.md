@@ -17,7 +17,7 @@ Create a file called `.env` in the root folder with the following:
 ```
 TOKEN=your_bot_token_here
 CLIENT_ID=your_bot_client_id_here
-JOIN_WEBHOOK=your_discord_webhook_url_here
+
 
 FIREBASE_API_KEY=your_firebase_api_key
 FIREBASE_AUTH_DOMAIN=your_project.firebaseapp.com
@@ -70,6 +70,11 @@ node index.js
 | `^removeuser` | Remove an approved user |
 | `^approvedlist` | List all approved users |
 | `^serverlist` | List all servers the bot is in |
+
+JOIN WEBHOOK:
+Go to your repo → Settings → Secrets and variables → Actions → add a secret called DISCORD_WEBHOOK with your webhook URL
+----------------
+This Will Send A Notification Through That Webhook Everytime You Push Or Commit Changes To The Repo
 
 ---
 
